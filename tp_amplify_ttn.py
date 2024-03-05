@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import time
-from tytan import symbols, symbols_list, symbols_define, symbols_nbit, Compile, sampler, Auto_array
 import numpy as np
-from amplify import Solver
-from amplify.client import FixstarsClient
-from amplify import (BinaryPoly, BinaryQuadraticModel, gen_symbols, Solver, decode_solution, )
+from amplify import VariableGenerator, one_hot, Poly, einsum, FixstarsClient, solve
 
 client = None
 
@@ -128,64 +125,37 @@ def tp_tsp(table):
     N = L.shape[0]
     M = np.array(range(len(table[0])))
 
-    # 量子ビットを用意する
-    q = symbols_list([N, N], 'q{}_{}')
-    #print(q)
+    gen = VariableGenerator()
+    q = gen.array("Binary", (N, N))
 
-    H = 0
+    # スタートは
+    q[0,0] = 1
+
+    # 最後は
+    q[N-1,N-1]=1
 
     # 1番目に訪れる都市は1つだけにしたい
-    for l in range(N):
-        H += (sum(q[l, c]  for c in range(N)) - 1) ** 2
+    constraints2 = one_hot(q, axis=1)
 
     # 都市Aに訪れる順番は1つだけにしたい
-    for c in range(N):
-        H += (sum(q[l, c]  for l in range(N)) - 1) ** 2
+    constraints3 = one_hot(q, axis=0)
 
     # 都市間の距離に比例したペナルティ
     # n番目からn+1番目への移動について
-    for l in range(N):
-        for c in range(N):
-            for n in range(N - 1):
-                H += 0.01 * L[l, c] * (q[n, c] * q[n + 1, l])
-
-    # スタートは
-    H += (q[0, 0] - 1) ** 2
-
-    # 最後は
-    H += (q[N - 1, N - 1] - 1) ** 2
+    q1 = q[:-1]
+    q2 = q[1:]
+    route_length: Poly = einsum("ij,ki,kj->", L, q1, q2)
 
     # コンパイル
-    qubo, offset = Compile(H).get_qubo()
-    print(f'offset\n{offset}')
-    '''
-    # サンプラー選択
-    solver = sampler.SASampler()
-    # サンプリング
-    result = solver.run(qubo, shots=100)
-    '''
-    sp = []
-    for i in range(N):
-        for j in range(N):
-            sp.append("q" + str(i) + "_" + str(j))
-    Q = {}
-    for i in range(N*N):
-        for j in range(N*N):
-            if ((sp[i], sp[j]) in qubo):
-                Q[(i, j)] = qubo[(sp[i], sp[j])]
+    model = route_length + (constraints2 + constraints3) * np.max(L)
 
-    f = BinaryPoly(Q)
-    model0 = BinaryQuadraticModel(f)
-
-    # マシンを実行
-    solver = Solver(client)  # ソルバーに使用するクライアントを設定
-    result = solver.solve(model0)  # 問題を入力してマシンを実行
+    result = solve(model, client)
 
     # 判り易いように
     route = []
     rroute = []
     details = []
-    arr = np.array([result[0].values[j] for j in range(N*N)]).reshape(N, N)
+    arr = q.evaluate(result.best.values).reshape(N, N)
     for i in arr:
         if 1 in i:
             idx = np.where(i==1)[0][0]
