@@ -1,19 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import os
-import time
-from flask import Flask, redirect, render_template, request, jsonify, make_response, send_file
-import base64
-import uuid
-import socket
-from io import BytesIO
+from flask import Flask, render_template, request, jsonify, make_response
 import datetime
 import requests
 import json
-import ftplib
 from openai import OpenAI
-#import tp_pyqubo as tp
-#import tp_tytan as tp
 import tp_amplify_ttn as tp
 
 OPENAI_KEY = os.environ['OPENAI_KEY']
@@ -64,9 +56,6 @@ def tp_area():
 def tp_guidance():
     print("** /guida " + request.method)
     name = request.args.get('name', '')
-    distance = request.args.get('distance', '')
-    lat = request.args.get('lat', '')
-    lng = request.args.get('lng', '')
 
     res = openai_client.chat.completions.create(
         model="gpt-3.5-turbo",
