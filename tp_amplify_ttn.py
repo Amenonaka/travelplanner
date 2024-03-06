@@ -142,9 +142,14 @@ def tp_tsp(table):
 
     # 都市間の距離に比例したペナルティ
     # n番目からn+1番目への移動について
-    q1 = q[:-1]
-    q2 = q[1:]
-    route_length: Poly = einsum("ij,ki,kj->", L, q1, q2)
+    # q1 = q[:-1]
+    # q2 = q[1:]
+    # route_length: Poly = einsum("ij,ki,kj->", L, q1, q2)
+    route_length = 0
+    for k in range(N-1):
+        for i in range(N):
+            for j in range(N):
+                route_length += L[i, j] * q[k, i] * q[k + 1, j]
 
     # コンパイル
     model = route_length + (constraints2 + constraints3) * np.max(L)
