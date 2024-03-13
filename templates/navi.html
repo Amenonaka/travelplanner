@@ -119,6 +119,19 @@
 
         <div class="form-row">
           <div class="col-3">
+            <label class="form-check-label">出発時間</label>
+          </div>
+          <div class="col-2">
+            <input class="form-control form-control-sm" type="number" id="start_hh" min="0" max="23" maxlength="2" style="text-align:right">
+          </div>
+          ：
+          <div class="col-2">
+            <input class="form-control form-control-sm" type="number" id="start_mm" min="0" max="59" maxlength="2" style="text-align:right">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="col-3">
             <label class="form-check-label">到着期限</label>
           </div>
           <div class="col-2">
@@ -143,6 +156,10 @@
           <button id="calc-button" type="button" class="btn btn-primary btn-block" onclick="chg_cb();">
             <span id="calc-spinner" class="spinner-border spinner-border-sm" hidden="hidden"></span>
             ルート計算
+          </button>
+          <button id="calc-button" type="button" class="btn btn-primary btn-block" onclick="suggestCource();">
+            <span id="calc-spinner" class="spinner-border spinner-border-sm" hidden="hidden"></span>
+            コース提案
           </button>
         </p>
 
@@ -496,6 +513,112 @@
         executing(false);
       }
 
+      // コース提案
+      async function suggestCource() {
+        executing(true);
+        // 消す
+        while (elm_selareas.firstChild) {
+          elm_selareas.removeChild(elm_selareas.firstChild);
+        }
+
+        // areasに経由地の座標を入れる
+        var areas = []                   // [['地点A',[34.99, 135.99]], ['地点A',[34.99, 135.99]]]
+        var priorities = []
+        var stayingTimes = []
+        // 地図の中心座標(現在地)を追加
+        var latLng = _map.getCenter();
+        console.log("現在地", [latLng.lat(), latLng.lng()]);
+        areas.push(["現在地", 0, [latLng.lat(), latLng.lng()], 0]);
+        // 選択している経由地を追加
+        for (var i = 0; i < _areas.length; i++) {
+          var elmx_cb = document.getElementById("area" + i);
+          try {
+            var form_rate = document.getElementById("rate" + i);
+            var priority = form_rate.elements["rate"].value;
+            var stayingTime = document.getElementById("area_val" + i).value;
+          } catch(e) {
+            console.log(e);
+          }
+
+          if (elmx_cb.checked) {
+            var elmx_val = document.getElementById("area_val" + i);
+            console.log(_areas[i]["name"], _areas[i]["location"], priority);
+            areas.push([_areas[i]["name"], elmx_val.value, [_areas[i]["location"]["lat"],_areas[i]["location"]["lng"]], _areas[i]["price"]]);
+            priorities.push(Number(priority));
+            stayingTimes.push(Number(stayingTime));
+          }
+        }
+        // 選択している到着地を追加
+        for (var i = 0; i < _areas.length; i++) {
+          if (elm_arrival.value == _areas[i]["name"]) {
+            console.log(_areas[i]["name"], _areas[i]["location"]);
+            areas.push([_areas[i]["name"], _areas[i]["duration_of_stay"], [_areas[i]["location"]["lat"],_areas[i]["location"]["lng"]], _areas[i]["price"]]);
+          }
+        }
+
+        // 表を作成
+        // 初期化
+        var table = [];
+        for (var i = 0; i < areas.length; i++) {
+          table[i] = [];
+          for (var j = 0; j < areas.length; j++) {
+            table[i][j] = 0;
+          }
+        }
+
+        for (var i = 0; i < areas.length; i++) {
+          for (var j = 1 + i; j < areas.length; j++) {
+            const start = areas[i][2];
+            const goal = areas[j][2];
+            const res = await fetch("/route?start=" + start + "&goal=" + goal);
+            const ret = await res.json();
+            table[i][j] = ret.time;
+            table[j][i] = ret.time;
+          }
+        }
+        // 確認用に表示
+        for (var i = 0; i < areas.length; i++) {
+          var str = "";
+          for (var j = 0; j < areas.length; j++) {
+            str = str + " " + table[j][i];
+          }
+          console.log(str);
+        }
+        const method = "POST";
+        const headers = {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        };
+        const endTime = new Date();
+        endTime.setHours(document.getElementById("hh").value);
+        endTime.setMinutes(document.getElementById("mm").value);
+        const startTime = new Date();
+        startTime.setHours(document.getElementById("start_hh").value);
+        startTime.setMinutes(document.getElementById("start_mm").value);
+        console.log(limit.toLocaleString('ja-JP'));
+        const body = JSON.stringify({table: table, priorities: priorities, stayingTimes: stayingTimes, endTime: endTime.toLocaleString('ja-JP'), startTime: startTime.toLocaleString('ja-JP')});
+        const res = await fetch("/suggest_cource", {method, headers, body});
+        const myjson = await res.json();
+        console.log(myjson);
+        var price = document.getElementById("price").value
+        price = price == 0 ? 999999 : price;
+        var calcdate = limit;
+        var prices = 0;
+        if ('details' in myjson) {
+          console.log("成功");
+          var ret = calcroute(myjson, areas);
+          calcdate = ret[0];
+          prices = ret[1];
+        } else {
+          printrow("エラー");
+        }
+
+        printroute(myjson, areas);
+        displayroute(myjson, areas);
+
+        executing(false);
+      }
+
       // クリックした場所を地図の中心にする
       function click_map(event) {
         _map.setCenter(event.latLng);
@@ -596,6 +719,13 @@
         } else {
           alert("ブラウザが位置情報取得に対応していません");
         }
+      }
+
+      // 出発時間
+      function setStartTime() {
+        let date = new Date();
+        document.getElementById("start_hh").value = date.getHours();
+        document.getElementById("start_mm").value = date.getMinutes();
       }
 
       // 到着期限
@@ -753,7 +883,8 @@
             }
           }
         });
-
+      // 出発時間を設定
+      setStartTime();
       // 到着期限を設定
       setEndTime();
     </script>

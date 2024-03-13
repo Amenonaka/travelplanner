@@ -91,6 +91,19 @@ def tp_tsp():
     print(ret)
     return jsonify(ret)
 
+@app.route("/suggest_cource", methods=['POST'])
+def suggest_cource():
+    print("** /suggest_cource " + request.method)
+    table = request.json['table']
+    priorities = request.json['priorities']
+    stayingTimes = request.json['stayingTimes']
+    endTime = request.json['endTime']
+    startTime = request.json['startTime']
+    print(table)
+    ret = tp.suggest_cource(table, priorities, stayingTimes, endTime, startTime)
+    print(ret)
+    return jsonify(ret)
+
 @app.route("/route")
 def tp_route():
     print("** /route " + request.method)

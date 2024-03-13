@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
+import datetime
 import time
 import numpy as np
-from amplify import VariableGenerator, one_hot, Poly, einsum, FixstarsClient, solve
+from amplify import VariableGenerator, one_hot, Poly, einsum, FixstarsClient, solve, less_equal
 
 client = None
 
@@ -184,4 +185,101 @@ def tp_tsp(table):
         'details': details,
     }
     #print(ret)
+    return ret
+
+def suggest_cource(table, priorities, stayingTimes, endTime, startTime):
+    print('コース提案')
+    print(f'{table=}')
+    print(f'{priorities=}')
+    print(f'{stayingTimes=}')
+    print(f'{endTime=}')
+    print(f'{startTime=}')
+
+    L = np.array(table)
+    N = L.shape[0]
+    M = np.array(range(len(table[0])))
+
+    gen = VariableGenerator()
+    q = gen.array("Binary", (N, N))
+
+    # スタートは
+    q[0,0] = 1
+
+    # 最後は
+    q[N-1,N-1]=1
+
+    # 目的関数
+    score = 0
+    for i in range(N-2):
+        for j in range(N-2):
+            score += priorities[i] * q[i+1, j+1]
+
+    # 移動時間
+    # n番目からn+1番目への移動について
+    travel_time = 0
+    for l in range(N):
+        for c in range(N):
+            for n in range(N - 1):
+                travel_time += L[l, c] * (q[n, c] * q[n + 1, l])
+    print(f'{travel_time=}')
+    # 滞在時間
+    stay_time = 0
+    for i in range(N-2):
+        for j in range(N-2):
+            stay_time += stayingTimes[i] * q[i+1, j+1]
+    print(f'{stay_time=}')
+
+    # 移動時間と滞在時間の合計が制限時間以内
+    startTime = datetime.datetime.strptime(startTime, '%Y/%m/%d %H:%M:%S')
+    endTime = datetime.datetime.strptime(endTime, '%Y/%m/%d %H:%M:%S')
+    print(f'{startTime=}')
+    print(f'{endTime=}')
+    timeLimit = (endTime - startTime).seconds // 60
+    print(f'{timeLimit=}')
+    constraints1 = less_equal(travel_time + stay_time, timeLimit)
+    print(f'{constraints1=}')
+    print(f'{constraints1.penalty=}')
+
+    # 1番目に訪れる都市は1つだけにしたい
+    constraints2 = one_hot(q, axis=1)
+    print(f'{constraints2=}')
+
+    # 都市Aに訪れる順番は1つだけにしたい
+    constraints3 = one_hot(q, axis=0)
+    print(f'{constraints3=}')
+
+    # コンパイル
+    model = -score + (constraints1 + constraints2 + constraints3) * np.max(L)
+
+    result = solve(model, client)
+
+    # 判り易いように
+    route = []
+    rroute = []
+    details = []
+    # result.filter_solution = False
+    arr = q.evaluate(result.best.values).reshape(N, N)
+    for i in arr:
+        if 1 in i:
+            idx = np.where(i==1)[0][0]
+            route.append(int(idx))
+            rroute.append(int(M[idx]))
+        else:
+            print('エラー')
+            return {}
+    print(route)
+    for i in range(len(route) - 1):
+        print(route[i], route[i+1], L[route[i], route[i+1]])
+        detail = {
+            'from': int(M[route[i]]),
+            'to': int(M[route[i+1]]),
+            'time': float(L[route[i], route[i+1]]),
+        }
+        details.append(detail)
+
+    ret = {
+        'route': rroute,
+        'details': details,
+    }
+
     return ret
